@@ -1,0 +1,50 @@
+---
+title: "Final Project"
+author: "Olivia Quinn"
+date: "4/10/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+packages
+```{r}
+library(readr)
+library(tidyverse)
+```
+
+
+dat
+```{r}
+dat <- read_csv("MC:Dist data 72-2014/allCongressDataPublishV2.csv")
+View(dat)
+summary(dat)
+```
+
+
+this dataset has committee assignments from 109th - 113th congress
+```{r}
+commdat <- dat %>% filter(congNum >= 109)
+```
+
+```{r}
+DY <- dat %>% filter(lastName == "Young" & firstName == "Don")
+```
+
+21 obs for Don Young so each observation is district-congress
+
+I think I can work with that 
+
+```{r}
+freshman <- commdat %>% filter(numberTerms == 1)
+```
+
+```{r}
+energyfresh <- filter(freshman, grepl("energy", comName, ignore.case = TRUE))
+
+natfresh <- filter(freshman, grepl("natural", comName, ignore.case = TRUE))
+
+```
+
