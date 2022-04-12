@@ -31,6 +31,7 @@ commdat <- dat %>% filter(congNum >= 109)
 
 ```{r}
 DY <- dat %>% filter(lastName == "Young" & firstName == "Don")
+length(DY)
 ```
 
 21 obs for Don Young so each observation is district-congress
@@ -39,12 +40,14 @@ I think I can work with that
 
 ```{r}
 freshman <- commdat %>% filter(numberTerms == 1)
+length(freshman)
 ```
 
 ```{r}
 energyfresh <- filter(freshman, grepl("energy", comName, ignore.case = TRUE))
 
 natfresh <- filter(freshman, grepl("natural", comName, ignore.case = TRUE))
+
 
 ```
 
