@@ -361,8 +361,10 @@ set.seed(24)
 dat_folds <- vfold_cv(data = dat_train, v = 3, strata = com_1)
 ```
 
-## Recipe: to predict `com_1` with `gender`, `party.y`, `age`, `black`, `hispanic`, `recipient_cfscore`, `total_receipts`, `num_givers`, `total_pc_contribs`, `party_coord_exp`, `total_pac_contribs`, `district_partisanship`, `region`, `prcnt_foreign_born`, `prcnt_white`, `median_income`, `prcnt_ba`, and `gini` (dummy the factors + center and scale all predictors):
-
+## Recipe: 
+  
+To predict `com_1` with `gender`, `party.y`, `age`, `black`, `hispanic`, `recipient_cfscore`, `total_receipts`, `num_givers`, `total_pc_contribs`, `party_coord_exp`, `total_pac_contribs`, `district_partisanship`, `region`, `prcnt_foreign_born`, `prcnt_white`, `median_income`, `prcnt_ba`, and `gini` (dummy the factors + center and scale all predictors):
+  
 ```{r}
 #will be critical in later iterations of this project to capture the conditional effect of party on each of these predictors' effects on committee placement. Planning on doing so soon! 
 
