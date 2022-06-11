@@ -1,0 +1,743 @@
+---
+title: "Opening the 'Black Box' of Legislative Organization in Congress: Using Machine Learning to Predict the Committee Placements of Freshman Members"
+author: "Olivia Quinn"
+date: "4/10/2022"
+output: 
+  html_document:
+      toc: true
+      toc_float: true
+      code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE,
+                      warning = FALSE)
+```
+
+## Introduction
+
+Congress, President Woodrow Wilson argued, derives its great productive power from its two most important organizational features: the committee system and strong party leadership. Focusing exclusively on the House of Representatives, I explore the interaction of these two enduring institutions within the modern Congress, asking where along the way Congressmember and constituency interests have an effect on legislative organization.
+
+Congress organizes itself into several 'standing committees' where members meet regularly to consider issues and bills under their policy jurisdiction, send measures and recommendations to the full chamber, and conduct oversight of existing policy and programs. Despite their personal goals and preferences, members of Congress do not always receive the committee assignment they would prefer to have. They key moderating influence between committee requests, and actual assignments, are the two parties and their respective assignment panels: The House Republican Steering Committee and the House Democratic Steering and Policy Committee. Assignment lists decided within these panels are then approved by each party' caucus, and finally, the full House. This party-led assignment process inevitably determines the regional and ideological composition of the standing committees, and is largely overseen by party leaders (the Speaker, or House majority leader, and the House minority leader).
+
+Once Congress is in session and the committee rosters approved, legislators who do not serve on a particular committee defer to those who do, either because they trust and respect their expertise, or because they expect this deference when it comes to committee proposals within their own policy jurisdiction. Thus, the placement of newly elected (or freshmen) members of Congress onto committees can have a tremendous impact on legislative outcomes -- yet, relatively little is known about how these freshman will act on committee, given they have no voting or legislative history. Will they be wild-card voters or party-loyalists? Will they try to secure narrow distributive benefits for their districts, or act in the public interest?
+
+Congressional committee scholarship provides little clarity regarding this tension especially as it applies to the assignment process, and universalistic theories obscure the interaction of member goals and collective party goals across committee jurisdictions and across time. Specifically, a large part of the committee assignment process is hidden within the 'Black Box' of party leader decision-making, wherein outside observation is limited. This project attempts to fill this gap. I focus specifically on the US House of Representatives because the Senate is far smaller and does not produce enough Freshman members to conduct the following analysis.
+
+
+### Research Question
+
+**Research Question:** Are US House Committee Placements of Freshmen members of Congress 'predictable' such that a member's personal, district, and campaign finance characteristics influence party leader decisions? What features are most important in predicting which committee a freshman member will be assigned to?
+
+![](Images/US_House_Committee.jpg){width="300"}
+
+Image: US House Financial Services Committee members collecting testimony during a committee hearing
+
+![](Images/116th_NewHouseMembers_cropped.jpg){width="700"} Image: Freshman members of the 116th Congress, sworn in on January 3, 2019.
+
+
+### Practical Application
+
+This project serves as an initial 'proof of concept', which will be adapted (if fruitful!) into a predictive model where the characteristics of newly elected members could be collected and committee placement predictions generated, all before a member steps foot into the Capitol building. I envision this could be used during general elections in November, by data-forward publications like fivethirtyeight.com, to offer voters a prediction of which committees the two candidates would likely serve on if they are elected. This may help voters make more informed decisions between candidates, as the committee placements and subsequent policy jurisdictions of their representative can have important benefits for the district.
+ 
+ 
+**Load packages:**
+
+```{r}
+library(readr)
+library(tidyverse)
+library(janitor)
+#install.packages("corrplot")
+library(corrplot)
+library(tidymodels)
+library(ggthemes)
+library(glmnet)
+library(rpart.plot)
+#install.packages("vip")
+library(vip)
+```
+
+
+## Data: Loading, Cleaning, and Merging
+
+**Read in the Data from two sources**
+
+-   The "Legislative and District Data 1972-2013" data set produced by Professor Ella Foster-Molina (Oct. 2016). This data set matches district demographic information to a member of Congress's legislative actions from 1972 through 2013. The unit of analysis is individual members of Congress. The data is available at the Harvard dataverse [here](https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/CI2EPI). For each member of Congress there is data on:
+    -   personal characteristics for age, gender, race, ideology, etc.
+    -   district information for income, education, employment, etc.
+    -   legislative information for number of bills introduced, number enacted into law, etc.
+    -   committee information (from only the 109th - 113th Congresses (covering the 10 year period from 2005-2015)
+       
+-   The "Database on Ideology, Money in Politics, and Elections (DIME) (Version 2.0)" produced by Professor Adam Bonica (Aug. 2016). This data set includes common space ideal point scores (i.e. 'CFscores') for a wide range of political actors, calculated using 130 million political contributions made by individuals and organizations to local, state, and federal elections spanning a period from 1979 to 2014. The recipient database includes information on voting records, fundraising statistics, election outcomes, gender, and other candidate characteristics. All candidates are assigned unique identifiers that make it possible to track candidates if they campaign for different offices. The recipient IDs can also be used to match against the database of contribution records. The database also includes entries for PACs, super PACs, party committees, leadership PACs, 527s, state ballot campaigns, and other committees that engage in fundraising activities. The data is available at the Stanford data repository [here](https://data.stanford.edu/dime).
+
+```{r}
+#MC/District Data from Prof. Ella Foster-Molina (range: 1972-2013)
+MCdistDat <- read_csv("Data/MC:Dist data 72-2014/allCongressDataPublishV2.csv")
+
+#DIME data (pre-Congress ideology score based on campaign contributions) from Prof. Adam Bonica
+load("Data/DIME data/dime_recipients_all_1979_2014.rdata")
+
+district <- as_tibble(MCdistDat) %>% 
+  clean_names()
+
+dime <- as_tibble(cands.all) %>% 
+  clean_names()
+```
+
+
+**Clean and Subset the Member/District Data**
+
+```{r}
+fresh <- district %>% 
+  filter(com_name != "NA" & number_terms == 1) %>% 
+  relocate(icpsr, last_name, first_name, gender, cong_num, frac_served, state_dist, party, cook_lean_dem, region, com_name, .before = everything()) %>% 
+  mutate(party = ifelse(party == "Democrat", 100,
+                        ifelse(party == "Republican", 200, 328)))
+
+fresh <- fresh %>% 
+  rename(icpsr2 = icpsr)   #to match dime column 'icpsr2' for later merge 
+
+#fix select committee entries (MCs Patrick Murphy and Joseph Heck) so they run through outcome variable splitting function correctly
+fresh[94,11] = "House Committee on Armed Services House Committee on Permanent Select Committee on Intelligence"
+fresh[219,11] = "House Committee on Armed Services House Committee on Education and the Workforce House Committee on Permanent Select Committee on Intelligence"
+fresh$icpsr2 <- as.character(fresh$icpsr2)
+
+
+```
+
+
+**Clean/subset DIME data**
+
+```{r}
+# subset dime for federal House elections & create 'cong_num' variable based on election 'cycle' year. 
+dime <- dime %>% 
+  filter(seat == "federal:house") %>%   
+    mutate(cong_num = ifelse(cycle == 2004, 109,   
+                         ifelse(cycle == 2006, 110, 
+                             ifelse(cycle == 2008, 111,
+                                 ifelse(cycle == 2010, 112, 
+                                     ifelse(cycle == 2012, 113, 0))))))
+                                        
+#subset dime for Member identification variables and theorized predictors
+dime <- dime %>% 
+  select(icpsr2, name, election, cycle, cong_num, district, 
+         winner, party_orig, party, recipient_cfscore, total_receipts, num_givers, 
+         total_pc_contribs, party_coord_exp, total_pac_contribs, 
+         non_party_ind_exp_for, ind_exp_for, district_partisanship, district_pres_vs)
+
+#re-code Representative Griffith whose ICPSR code is incorrect in DIME data
+dime <- dime %>% 
+  mutate(icpsr2 = recode(icpsr2, "AL8291" = "20901"))
+```
+
+
+**Merge DIME data with Freshman Member/District data**
+
+```{r}
+dat <- left_join(fresh, dime, by = c("icpsr2", "cong_num")) 
+
+#organize new dat
+dat <- dat %>%  
+  relocate(icpsr2, last_name, name, election, cycle, cong_num, winner,.before = everything()) %>% 
+  relocate(district_partisanship, district_pres_vs, .before = cook_lean_dem) %>% 
+  relocate(state, cd, .before = state_dist) %>% 
+  relocate(party_orig, party.y, .before = party.x)
+
+#remove extraneous variables & overlap from merge (after confirming that name & last_name match, e.g.)
+dat <- dat %>%
+  subset(select = -c(spon_id, num_spon, num_cosp, num_pass_h, num_enact, pass_prcnt, middle_name, 
+                     under10k, over10k, over15k, over25k, over35k, over50k, over75k, over100k, over150k, over200k, 
+                     chair, rank, rank_chair, days_served, prcnt_black, prcnt_white_all, 
+                     dwnom1, dwnom2, election, name, statenm, district.x, district.y, full))
+```
+
+
+**Create outcome variables `com_1` through `com_4`**
+
+```{r}
+dat <- dat %>% 
+  separate(com_name, c("A","com_1","com_2", "com_3", "com_4"), sep = "House Committee on") %>% 
+  subset(select = -A) %>% 
+  mutate(com_1 = trimws(com_1, which = c("both"))) %>% 
+  mutate(com_2 = trimws(com_2, which = c("both"))) %>% 
+  mutate(com_3 = trimws(com_3, which = c("both"))) %>% 
+  mutate(com_4 = trimws(com_4, which = c("both")))
+#A goes unfilled because it represents everything before the first instance of "House Committee on" which is nothing 
+
+
+# ~~~ Group the various historical names to a higher, 'simple' common name category ~~~ 
+# ~~(provided by Congress.gov https://www.congress.gov/help/committee-name-history)~~
+
+dat <- dat %>% 
+  mutate_at(c("com_1", "com_2", "com_3", "com_4"), funs(recode(., "Education and the Workforce" = "Education and Labor", 
+              "Government Reform" = "Oversight and Reform", 
+              "Oversight and Government Reform" = "Oversight and Reform", 
+              "International Relations" = "Foreign Affairs",
+              "Resources" = "Natural Resources",
+              "Science" = "Science, Space, and Technology", 
+              "Science and Technology" = "Science, Space, and Technology",
+              "Standards of Official Conduct" = "Ethics",
+              "the Budget" = "Budget",
+              "the Judiciary" = "Judiciary")))
+
+#bind together and check all committee placement variables for mis-codes
+com_1 <- as_tibble(dat$com_1)
+com_2 <- as_tibble(dat$com_2)
+com_3 <- as_tibble(dat$com_3)
+com_4 <- as_tibble(dat$com_4)
+
+com_assign_all <- bind_rows(com_1, com_2, com_3, com_4)
+com_assign_all <- na.omit(com_assign_all)
+```
+
+
+**Identify and troubleshoot "missingness"**
+
+```{r}
+# ~~ MEMBERS WHO SERVED ONLY FRACTION OF FULL CONGRESSIONAL SESSION ~~
+part_term <- dat %>% 
+  filter(frac_served < 1)
+# 30 members who served less than 1 full session as a freshman either won a special election in the middle of the session, or resigned/retired/died etc. Often there is no DIME data because there is no FEC fundraising period for Bonica to work from. The other variables should predict placements however..
+
+# ~~ MISSING ELECTION CYCLE ~~
+no_cycle <- dat %>% 
+  filter(is.na(cycle))
+# mostly captures frac_served < 1 (so reflects special elections not getting coded in DIME)
+# [RECODE LATER] Adler: 20928... I believe a DIME mis-code given he did win in 2008, served in 11th Congress. Coded as senate race in cands.all?
+# [RECODED] Griffith: AL8291... icpsr code is wrong in DIME, fixed above
+
+# ~~NO ICPSR CODE~~ 
+# returns MCs from Puerto Rico and Northern Mariana Islands (they can't vote in Congress anyhow)
+no_icpsr <- dat %>% 
+  filter(is.na(icpsr2))
+
+# ~~LOSERS~~
+losers <- dat %>% 
+  filter(winner == "L")
+# Ellsworth won in 2006 and served in 110th Congress -- so that's a DIME mis-code? Ignore
+# Turner runs and loses in 2010 but is elected in a 2011 special election to fill same seat. Wins that election and serves fraction of 112th Congress. 
+# Garcia won in 2012 and served in 113th Congress -- so that's a DIME mis-code? Ignore
+# Kildee won in 2012 and served in 113th Congress -- so that's a DIME mis-code? Ignore
+
+# ~~OTHER MISSINGNESS?~~
+#colSums(is.na(dat))
+```
+
+
+**Identify Party Switchers**
+
+```{r}
+switchers <- dat %>% 
+  filter(party_orig != party.y)
+
+#returns none, but I know P. Griffith from AL did switch to R in 2009 after being elected as a D in 2008. re-code and fix. 
+#looks like Griffith is the only to do so across Congress and my time period of interest.  (https://en.wikipedia.org/wiki/List_of_United_States_representatives_who_switched_parties) His committee assignment reflects the Energy & Commerce position he gained when he switched to R. He had to forfeit the D placements he had for a majority of 2009.
+
+#Recode Rep. Griffith's "party_orig" manually
+dat[102,12] = "100"
+```
+
+
+**Save as new data set**
+
+```{r}
+save(dat, file = "Data/dat.rda")
+```
+
+
+### Predictor and Outcome Variables
+
+Full codebook available in github project file.
+
+**Main outcome variable(s)**
+
+-   `com_1`, `com_2`, `com_3`, `com_4`: Variables capturing the first through fourth committee placement of Freshmen Members of Congress. This variable comes from the District/Member data set, and originally included one column with each committee placement in a single string. Until this project can be further developed, into a *multivariate multiple regression*, whereby there are multiple outcome and predictor variables, I model the first committee placement outcome only.
+
+
+**Main predictor variable(s)**
+
+-   `gender`: Gender of Member of Congress. 'M' or 'F'.
+
+-   `party.x`: Party identification of Member of Congress (100 = Dem, 200 = Rep, 328 = Ind).
+
+-   `age`: Member's age at time of being sworn into Congress for that session.
+
+-   `black`: Binary variable for being a member of the Congressional Black Caucus. 1 if a member of CBC, 0 if not.
+
+-   `hispanic`: Binary variable for being a member of the Congressional Hispanic Caucus. 1 if a member of CHC, 0 if not.
+
+-   `recipient_cfscore`: Estimated ideology of candidate/recipient based on donations received.
+
+-   `total_receipts`: Total dollars raised by candidate during an election cycle.
+
+-   `num_givers`: Number of district donors that gave to the candidate during a specific election cycle.
+
+-   `total_pc_contribs`: Total receipts from party committees. Given to candidate.
+
+-   `party_coord_exp`: Total party coordinated expenditures. Paid on behalf of candidate.
+
+-   `total_pac_contribs`: Total PAC receipts.
+
+-   `cook_lean_dem`: Democratic presidential nominee's share of the two-party presidential vote in the past two presidential elections compared to the party's national average two-party share for those elections (by district).
+
+-   `region`: Geographical region of Congressional district. Midwest, Northeast, South, West, and Territory.
+
+-   `prcnt_foreign_born`: Percent of the district that was born in a foreign country.
+
+-   `prcnt_white`: Percent of the district that is white non-Hispanic.
+
+-   `gini`: Inequality index estimated from the percent of the population in each income bracket.
+
+-   `ses_norm`: Socioeconomic status measure: estimated from the income and education of a district. This was estimated by finding the weight of the common factor between education and income.
+
+
+## Exploratory Data Analysis
+
+
+**Outcome Variable EDA**
+
+**Frequency of Committee placements across all Freshman Members of Congress and across all Congresses 109th - 113th (2005-2015)** *Note*: While Second committee placements are common, third and fourth placements are very rare and are thus not included for analysis here. Future iterations of this project will include a multivariate multiple regression/classification model which account for multiple committee placements per member.
+
+```{r}
+com_assign_all %>% 
+  ggplot(aes(x = forcats::fct_infreq(value))) +
+  geom_bar() +
+  coord_flip() + 
+  labs(x = "Committee", y = 'Freq.')
+```
+
+
+**Frequency of *First* Committee Placements (Main Outcome Variable)**
+
+```{r}
+dat %>% 
+  ggplot(aes(x = forcats::fct_infreq(com_1))) +
+  geom_bar() +
+  coord_flip() +
+  labs(x = "Committee", y = 'Freq.')
+```
+
+The figures above support previous research on committee placements, which argue that Freshman members are most often placed on less desirable, lower-impact committees. On Agriculture, Financial Services, and Armed Services, members can devote a lot of time distributing particular benefits to their districts, which serves their re-election interests well, but not a lot of time debating and legislating on issues of high national interest. Seats on more desirable, high-impact committees, like Rules, Ways and Means, Appropriations, are often reserved for incumbent members who have shown to be party loyalists and with a particular legislative interest in the policy jurisdiction.
+
+ 
+**Predictor Variable EDA**
+
+**Gender of Freshmen Members by Party Affiliation**
+
+Most freshman elected over this sample of Congresses were men, with Democrats electing more women than Republicans.
+
+```{r}
+dat %>% 
+  ggplot(aes(gender, as.factor(party.x))) + 
+  geom_jitter(aes(color = gender), size = 0.5) +
+  scale_y_discrete("Party", labels = c("100" = "Dem.","200" = "Rep."))
+```
+
+
+**District Ideology and Freshman Partisanship by Region of the United States**
+
+The boxplot shows that Republican freshmen elected in the South represent more conservative districts than Republican freshmen elected elsewhere, whereas Democratic freshmen elected in the West and Northeast represent more liberal districts than Democratic freshmen elsewhere (although only slightly). The considerable overlap in the Northeast indicates that moderate districts there elect Democratic freshmen and Republican freshman more equally than other regions. This is an interesting finding in itself.
+
+```{r}
+ggplot(na.omit(dat[, c("district_partisanship", "region", "party.x")]), 
+       aes(x = district_partisanship, y = region, fill = as.factor(party.x))) +
+    geom_boxplot() +
+    scale_fill_manual(values=c("#0066FF", "#FF3333"), 
+                       name="Party of MC",
+                       breaks=c("100", "200"),
+                       labels=c("Dem.", "Rep.")) +
+    labs(x = "District Partisanship", y = "Region") 
+```
+
+
+**Total Individual Contributors and Party Contributions by Party of Freshman Member**
+
+This plot shows that Democrats receive far more individual contributions than Republicans, but party contributions max out after a certain point. Republicans, on the other hand, receive far fewer individual contributions than Democrats, with far more funding coming from party contributions. This indicates that the funding structure for Freshman members (and the host of ideological commitments that come with it) is vastly different between parties, and could contribute to different legislative outcomes, such as committee placements and roll call votes.
+
+```{r}
+dat %>% 
+  ggplot(aes(x = num_givers, y = total_pc_contribs, color = as.factor(party.x))) +
+  geom_point() +
+  scale_color_manual(values=c("#0066FF", "#FF3333"), 
+                       name="Party of MC",
+                       breaks=c("100", "200"),
+                       labels=c("Dem.", "Rep.")) +
+    labs(x = "Number of Individual Contributors", y = "Party Contributions") 
+```
+
+
+**Outcome and Predictor Variable Relationships**
+
+
+**Boxplot: First Committee Placement by Ideology (CFscore) and Party**
+
+This figure indicates that there is far greater ideological diversity between Freshman Democrats placed on a given committee than between Republicans. It also suggests that slightly more conservative Democrats are placed on Homeland Security and Agriculture, which makes sense given the policy jurisdictions there.
+
+```{r}
+party_label <- c('100' = "Dem.", '200' = "Rep.")
+
+dat %>%
+  ggplot() +
+    geom_boxplot(mapping = aes(x = com_1, y = recipient_cfscore)) +
+    geom_jitter(mapping = aes(x = com_1, y = recipient_cfscore), 
+                alpha = .20, 
+                height = 0) +
+    labs(x = "Committee", y = "Freshman Ideology") +
+    coord_flip() + 
+    facet_wrap(~party.x, labeller = labeller(party.x = party_label)) 
+```
+
+
+**First Committee Placement by Percent Foreign Born in the District**
+
+This figure indicates that Freshmen members of Congress representing districts with higher percentages of foreign born people are placed onto the, for example, Foreign Affairs and Science, Space, and Technology committees than are Freshmen from more 'native born' districts. Agriculture is a good indicator here as well: Districts where a majority of agriculture occurs (largely white and rural) likely have fewer foreign born people. I wonder how this has changed or may change over time as more folks from Mexico and Central America are employed as farm workers.
+
+```{r}
+dat %>%
+  ggplot() +
+    geom_boxplot(mapping = aes(x = com_1, y = prcnt_foreign_born)) +
+    geom_jitter(mapping = aes(x = com_1, y = prcnt_foreign_born), 
+                alpha = .25, 
+                height = 0) +
+    labs(x = "Committee", y = "Percent of District that is Foreign Born") +
+    coord_flip()
+```
+
+
+**Lower triangle correlation matrix for (numeric) theorized predictors**
+
+Results here indicate that conservative districts (indicated by high values of `district_partisanship` and low values of `cook_lean_dem`) are positively correlated with a higher percentage of white people in the district, a slightly lower median income, and a slightly lower education level. Liberal districts are positively correlated with higher percentages of foreign born people, slightly higher median incomes, and a higher education level. Liberal districts are more likely to be represented by a Black freshman in Congress, and to a lesser degree, a Hispanic Freshman. Interestingly, `com_power` (an indication of how powerful the committees are that a given Freshman sits on) is slightly positively correlated with conservative districts. Additionally, `party_coord_expenditures` is slightly positively correlated with committee power, indicating that Freshman with greater campaign support from their Party are more likely to receive valuable committee placements. Number of campaign donors (a rough indicator of candidate populism) is slightly negatively associated with committee power, while total receipts is positively correlated. This might indicate that Freshman members with a greater number of small donors receive less powerful committee placements.
+
+```{r}
+dat %>% 
+  select(district_partisanship, cook_lean_dem, prcnt_foreign_born, median_income, 
+         prcnt_ba, prcnt_white, com_power, num_com, black, hispanic, party.x, 
+         recipient_cfscore, party_coord_exp, total_receipts, num_givers, total_pc_contribs, total_pac_contribs) %>% 
+  cor(use = "pairwise.complete.obs") %>% 
+  corrplot(type = "lower") 
+```
+
+
+## Data Splitting and Cross-Validation
+
+**Data Splitting**
+
+```{r}
+set.seed(24)
+
+#pre-process out MCs from territories where data is NA
+dat <- dat %>% 
+  filter(!(region == 'territory'))
+
+# factor the nominal variables 
+dat <- dat %>% 
+  mutate(com_1 = factor(com_1), com_2 = factor(com_2), com_3 = factor(com_3), com_4 = factor(com_4), 
+         region = factor(region), 
+         party.x = factor(party.x), 
+         gender = factor(gender), 
+         black = factor(black), 
+         hispanic = factor(hispanic))  
+
+#initial split stratified on the outcome variable
+dat_split <- dat %>% initial_split(strata = com_1, prop = 0.85)
+dat_train <- training(dat_split)
+dat_test <- testing(dat_split)
+dim(dat_train)
+dim(dat_test)
+
+```
+
+**V-Fold Cross-Validation on the training set**
+
+Here I split the data into the minimum number of folds (v=3) due to my small N and relatively unbalanced outcome classes. I stratify on the outcome variable `com_1`, attempting to rectify this as much as possible by ensuring that each fold has roughly the same distribution of the outcome.
+
+```{r}
+set.seed(24)
+dat_folds <- vfold_cv(data = dat_train, v = 3, strata = com_1) 
+```
+
+## Recipe
+
+To predict `com_1` with `gender`, `party.x`, `age`, `black`, `hispanic`, `recipient_cfscore`, `total_receipts`, `num_givers`, `total_pc_contribs`, `party_coord_exp`, `total_pac_contribs`, `cook_lean_dem`, `region`, `prcnt_foreign_born`, `prcnt_white`, `median_income`, `prcnt_ba`, and `gini`.
+
+Here I dummy code the factors, center and scale all predictors, impute NAs using the median values, pool infrequent committee placements into an "other" category, and remove variables which are sparse and unbalanced. These recipe modifications were necessary given my (relatively) small n sample and unbalanced outcome classes. Future iterations of this project will include more data on a larger sample of Congresses, which may alleviate some of these issues.
+
+```{r}
+#will be critical in later iterations of this project to capture the conditional effect of party on each of these predictors' effects on committee placement via an interaction term, or by splitting the data by party. Planning on doing so soon! 
+
+dat_recipe <- recipe(com_1 ~ gender + party.x + age + black + hispanic + 
+                       recipient_cfscore + total_receipts + num_givers + 
+                       total_pc_contribs + party_coord_exp + total_pac_contribs + 
+                       cook_lean_dem + region + prcnt_foreign_born + 
+                       prcnt_white + gini + ses_norm, data = dat_train) %>% 
+              step_other(com_1, threshold = .02, id = "other_id") %>% 
+              step_dummy(all_nominal_predictors()) %>% 
+              step_impute_median(recipient_cfscore, total_receipts, num_givers, 
+                                 total_pc_contribs, party_coord_exp, total_pac_contribs) %>% 
+              step_normalize(all_predictors()) %>% 
+              step_nzv(all_predictors()) 
+
+```
+
+
+## Model Fitting
+
+### Model 1: Multinomial Regression
+
+First, I specify and tune a multinomial regression model, tuning hyperparameters `penalty` and `mixture`. I do this to see if some amount of feature regularization will help decrease variance (while only marginally increasing bias, ideally). Regularization shrinks 'unhelpful' predictors down to near zero which helps in feature selection.
+
+```{r}
+elastic_net_spec <- multinom_reg(penalty = tune(), 
+                                 mixture = tune()) %>% 
+                    set_mode("classification") %>% 
+                    set_engine("glmnet")
+
+en_workflow <- workflow() %>% 
+  add_recipe(dat_recipe) %>% 
+  add_model(elastic_net_spec)
+
+en_grid <- grid_regular(penalty(range = c(-5, 5)), 
+                        mixture(range = c(0, 1)), levels = 5)
+```
+
+```{r}
+#tuned_en_multinom_res <- tune_grid(
+#  en_workflow,
+#  resamples = dat_folds, 
+#  grid = en_grid)
+
+#saveRDS(tuned_en_multinom_res, file = "Model Results/tuned_en_multinom_res.rds")
+
+tuned_en_multinom_res <- readRDS(file = "Model Results/tuned_en_multinom_res.rds")
+
+#~~~~PLOT~~~~~~
+
+autoplot(tuned_en_multinom_res) 
+```
+
+
+The ROC-AUC of the best fitting multinomial regression model on the folded data is 0.62. It has a mixture of 1, and a penalty of 0.00001. This model is purely a lasso regression (mixture = 1) but with a very small lasso penalty. This indicates that a higher proportion of lasso penalty with smaller amounts of regularization tend to produce higher ROC-AUC values. Interestingly, higher values of regularization and a pure ridge regression produce higher accuracy values. This requires more investigation as to why these different metrics respond so differently to the same value of the tuning parameters, although they do both seem to level off after a certain point. 
+
+```{r}
+multinom_compare <- show_best(tuned_en_multinom_res, metric = "roc_auc", n=1)
+multinom_compare
+```
+
+
+Select best multinomial model and fit to the full training set. Save for later comparison.
+
+```{r}
+best_multinom_model <- select_best(tuned_en_multinom_res, metric = "roc_auc")
+
+en_final <- finalize_workflow(en_workflow, best_multinom_model)
+
+multinom_final_fit <- fit(en_final, data = dat_train)
+```
+
+
+### Model 2: Classification Tree
+
+Second, I fit and tune a decision tree model, tuning `cost_complexity`. `Cost_complexity` reflects the pruning penalty of the decision tree, or the trade off between how complex the tree is and its fit to the data. Decision trees are notoriously susceptible to overfitting, and thus are unable to handle new data very well. Tuning complexity helps us to keep things as simple as possible without sacrificing accuracy.
+
+```{r}
+tree_spec <- decision_tree() %>%
+  set_engine("rpart")
+
+class_tree_spec <- tree_spec %>%
+  set_mode("classification")
+
+class_tree_wf <- workflow() %>%
+  add_model(class_tree_spec %>% set_args(cost_complexity = tune())) %>%
+  add_recipe(dat_recipe)
+
+tree_grid <- grid_regular(cost_complexity(range = c(-4, 1)), levels = 5)
+
+#tree_tune_res <- tune_grid(
+#  class_tree_wf, 
+#  resamples = dat_folds, 
+#  grid = tree_grid, 
+#  metrics = metric_set(roc_auc))
+
+
+#saveRDS(tree_tune_res, file = "Model Results/tree_tune_res.rds")
+
+tree_tune_res <- readRDS(file = "Model Results/tree_tune_res.rds")
+
+#~~~~PLOT~~~~~~
+
+autoplot(tree_tune_res)
+```
+
+The ROC-AUC of the best-performing pruned tree (on the folds) is 0.56. With a cost-complexity of 0.0001. This indicates that our best-performing model is actually more complex than worse performing models, if only slightly.
+
+
+We see here that the best pruned decision tree produced a ROC-AUC of 0.56, with a relatively small pruning penalty. This indicates that our model benefits from some complexity, and that more simple trees become less accurate. 
+
+```{r}
+tree_compare <- show_best(tree_tune_res, metric = "roc_auc", n=1)
+tree_compare
+```
+
+
+Fitting and visualizing the best-performing decision tree with training data.
+
+```{r}
+best_complexity <- select_best(tree_tune_res)
+
+class_tree_final <- finalize_workflow(class_tree_wf, best_complexity)
+
+class_tree_final_fit <- fit(class_tree_final, data = dat_train)
+
+#~~~~PLOT~~~~~~
+  
+class_tree_final_fit %>%
+  extract_fit_engine() %>%
+  rpart.plot(type = 4)
+
+```
+
+This decision tree makes visual sense, given that Agriculture is the most commonly occurring class and here it is the first node. We can see that percent foreign born in the district, inequality index, and fundraising receipts are all important predictors. Unfortunately, those final features near the ends of the tree often place members mostly into the common class outcomes (Agriculture, Armed Services, etc.) This tree is a good visualization of what a ROC-AUC of 0.56 might look like. 
+
+
+### Model 3: Random forest
+
+Third, I fit and tune a random forest model, tuning `mtry`, `trees`, and `min_n`. Random forest models train multiple trees, each on a random subset of both predictors and observations. In this way, we avoid any correlation issues with ensemble tree methods. To find an optimal random forest model we use hyperparameter tuning to vary the number of predictors that each tree will be trained on, the total number of trees to be fit, and the minimum number of observations in a given node that are required for the node to be split further.
+
+```{r}
+rf_spec <- rand_forest() %>%
+  set_engine("ranger", importance = "impurity") %>%
+  set_mode("classification")
+
+rf_wf <- workflow() %>%
+  add_model(rf_spec %>% set_args(mtry = tune(), trees = tune(), min_n = tune())) %>%
+  add_recipe(dat_recipe)
+
+rf_grid <- grid_regular(mtry(range = c(1,17)), 
+                        trees(range = c(5,50)), 
+                              min_n(range = c(2,10)),
+                                levels = 3)
+```
+
+```{r}
+#rf_tune_res <- tune_grid(
+#  rf_wf, 
+#  resamples = dat_folds, 
+#  grid = rf_grid, 
+#  metrics = metric_set(roc_auc))
+
+#saveRDS(rf_tune_res, file = "Model Results/rf_tune_res.rds")
+
+rf_tune_res <- readRDS(file = "Model Results/rf_tune_res.rds")
+
+#~~~~PLOT~~~~~~
+
+autoplot(rf_tune_res)
+```
+
+The ROC_AUC of the best-performing random forest model is 0.64. It has a `mtry` of 1, 50 trees, and a `min_n` of 2. The tuning results show that the best performance is gained by using only one predictor, at least 50 trees, and a fairly small minimal node size. It's surprising that a single predictor works better than all predictors, or some combination of them, but given my small N and largely erratic ROC-AUC plot above, I am hesitant to place too much confidence in these results.
+
+```{r}
+rf_compare <- show_best(rf_tune_res, metric = "roc_auc", n=1)
+rf_compare
+```
+
+Final fit on training data, and visualizing the important predictors.
+
+```{r}
+best_rf_tune <- select_best(rf_tune_res, metric = "roc_auc")
+
+rf_final <- finalize_workflow(rf_wf, best_rf_tune)
+
+rf_final_fit <- fit(rf_final, data = dat_train)
+
+rf_final_fit%>%
+  pull_workflow_fit()%>%
+  vip()
+```
+
+In this random forest model, the percent foreign born, inequality index score, and socio-economic status of a district are the best district-level predictors of committee placements. The fundraising ability, age, and ideology of a freshman member of Congress are the best member-level predictors of committee placements.
+
+### Model 4: Boosted tree
+
+Finally, I fit a boosted tree model and tune `trees`, or the number of sequential trees to grow.
+
+```{r}
+boost_spec <- boost_tree() %>%
+  set_engine("xgboost") %>%
+  set_mode("classification")
+
+boost_wf <- workflow() %>%
+  add_model(boost_spec %>% set_args(trees = tune())) %>%
+  add_recipe(dat_recipe)
+
+boost_grid <- grid_regular(trees(range = c(10,500)),levels = 5)
+
+#boost_tune_res <- tune_grid(
+#  boost_wf, 
+#  resamples = dat_folds, 
+#  grid = boost_grid, 
+#  metrics = metric_set(roc_auc))
+
+#saveRDS(boost_tune_res, file = "Model Results/boost_tune_res.rds")
+
+boost_tune_res <- readRDS(file = "Model Results/boost_tune_res.rds")
+
+#~~~~PLOT~~~~~~
+
+autoplot(boost_tune_res)
+
+```
+
+The ROC-AUC of the best performing boosted trees model is 0.57 with 10 trees. 
+
+```{r}
+boost_compare <- show_best(boost_tune_res, metric = "roc_auc", n=1)
+boost_compare
+```
+
+## Model Selection and Performance
+
+Next, I compare all four models across ROC AUCs.
+
+```{r}
+AUCs <- c(multinom_compare$mean, tree_compare$mean, rf_compare$mean, boost_compare$mean)
+auc_models <- c("Multinomial", "Decision Tree", "Random Forest", "Boosted Trees")
+auc_results <- tibble(AUCs = AUCs, models = auc_models)
+auc_results %>% 
+  arrange(-AUCs)
+```
+
+The random forest model works best! with an AUC of 0.64. Although the multinomial works nearly as well with 0.620.
+
+**Model Performance**
+
+```{r}
+metrics <- metric_set(roc_auc)
+
+rf_final_fit_test <-last_fit(object = rf_final_fit, split = dat_split, metrics = metrics)
+
+collect_metrics(rf_final_fit_test)
+```
+
+
+
+*Note* The use of `last_fit` is new to me, but I think is appropriate here. I first attempted to use `predict()`, and `augment()` with `select()` and `bind_cols` as in previous problem sets, but that code returns the error "Can't subset columns past the end. x Column `com_1` doesn't exist." I've determined that the use of `step_other` on the outcome variable in the recipe essentially removes the outcome, and accuracy metrics, confusion matrices, etc. cannot be produced. I followed this advice from Topepo who I believe is a tidymodels() developer (<https://github.com/tidymodels/workflows/issues/37>).
+
+Fortunately, including `skip = TRUE` results in a df with a set of predicted classes and 'truth' classes. Unfortunately, a similarly frustrating error results when using `augment()` + `roc_auc()` on the predictions and 'truth' column to calculate the metrics and visualize performance: "The number of levels in `truth` (18) must match the number of columns supplied in `...` (11)". I tried to re-factor the columns, but this produced a very unhelpful set of metrics that are inflated. Given the prediction `other` included the 7 missing classes.
+
+```{r}
+#final_predictions <- rf_final_fit_test %>% 
+#  collect_predictions() %>% 
+#  roc_curve(truth = com_1, .pred_Agriculture...) %>% 
+#  autoplot()
+
+##I would very much like to plot individual ROC curves for each of the outcome classes here, but some column names (e.g. ".pred_Education and Labor") have spaces in them, and the `com_1` column has spaces as well. I tried to trim white space for each, but the column factor levels do not remain intact. This will be my first task when I pick this project back up!
+```
+
+## Conclusion
+
+In conclusion, this entire exercise has been a lesson in "small n problems." But a fun one! With a final testing ROC-AUC of less than 0.5, we can conclude that the classification model performs worse than a random classifier would. This is disheartening, and leads me to believe that such a small data set, training set, and ultimately test set of ~50 observations is just not enough to train and test a machine learning model of this kind. This inherent limit led me to specify a recipe with the step function `step_other` which caused a few issues down the line when trying to predict on the test set. Fortunately, there are many more Congresses to collect data on, before the 109th and after the 113th, which should partly alleviate my issue with unbalanced classes. Once I have augmented my data to include many more observations, I will edit and re-run this project, which I believe will be fruitful. Classification models such as these can be very helpful in political science, and I don't see them done often, so I hope to contribute to the field in that way.
+
+Additionally, we gained very valuable insights from the Exploratory Data Analysis, including which predictors are correlated with one another, and which are correlated with a proxy measure of committee placements, committee power. We also learned that there is far greater ideological diversity between Freshman Democrats placed on a given committee than between Republicans. This may be an artifact of the parties in general; however, it does have implications for the committee assignment strategies for each party's leadership. Further, several campaign finance variables were correlated with the committee placements and cumulative 'committee power' of Freshmen members. I did not expect this result, and will be following up on it alone in future projects. Specifically, that `party_coord_expenditures` is slightly positively correlated with committee power, indicating that Freshman with greater campaign support from their Party are more likely to receive valuable committee placements. The variable importance plot and tuned decision tree also indicate that campaign finance variables are important predictors.
+
+In sum, I learned a lot! The 'black box' of freshmen committee placements in Congress remains mysterious, but I am confident that beefier data will enable a machine learning approach. The predictive ability of machine learning can be a huge benefit to the social sciences, yet this project shows the inherent limitations of small N data.

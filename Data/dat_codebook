@@ -1,0 +1,160 @@
+Olivia Quinn - Spring 2022
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+"Dat" Codebook
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+This codebook contains the variable descriptions for the dataset "dat.rda" which is contained in this repository, for the project titled "Opening the 'Black Box' of Legislative Organization in Congress: Using Machine Learning to Predict the Committee Placements of Freshman Members." This dataset is a combination of two others: the "Legislative and District Data 1972-2013" set published in October 2016 by Professor Ella Foster-Molina, and the "Candidate/Recipient Database" of the "Database on Ideology, Money in Politics, and Elections (DIME)" published in August 2016 by Professor Adam Bonica. 
+
+The first is available here: https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/CI2EPI)
+
+The second, here: https://data.stanford.edu/dime
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+VARIABLE NAME AND DESCRIPTIONS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+MEMBER OF CONGRESS CHARACTERISTICS: 
+
+"icpsr2": Icpsr number for each Member of Congress. Each candidate receives a unique ID that is constant across election cycles.
+
+"last_name": Last name of Member of Congress.
+
+"cycle": Four digit number that indicates the two-year election cycle during which a Member ran for Congress.
+
+"winner": ’W’ = won election; ’L’ = lost election. Used to check for incorrectly subset Freshman. 
+
+"first_name": First name of Member of Congress.
+
+"gender": Gender of Member of Congress. 'M' or 'F'.
+
+"frac_served": fraction of the congressional session that the Member served in. The vast majority of Members served in the full session (2 years). Those that didn’t filled vacant seats or left mid-term.
+
+"party_orig": Original party before switch. Only included for Members which switched parties, which is rare.
+
+"party.y": Party of candidate/recipient (100 = Dem, 200 = Rep, 328 = Ind). From Bonica's DIME dataset. (NAs due to merge error)
+
+"party.x": Party identification of Member of Congress (100 = Dem, 200 = Rep, 328 = Ind). Transformed from Foster-Molina's MC/District Data.
+
+"age": Member's age at time of being sworn into Congress for that session.
+
+"number_terms": Number of terms served in the House.
+
+"black": Binary variable for being a member of the Congressional Black Caucus. 1 if a member of CBC, 0 if not. 
+
+"hispanic": Binary variable for being a member of the Congressional Hispanic Caucus. 1 if a member of CHC, 0 if not. 
+
+"recipient_cfscore": Estimated ideology of candidate/recipient based on donations received.
+
+"total_receipts": Total dollars raised by candidate during an election cycle.
+
+"num_givers": Number of district donors that gave to the candidate during a specific election cycle.
+
+"total_pc_contribs": Total receipts from party committees. Given to candidate.
+
+"party_coord_exp": Total party coordinated expenditures. Paid on behalf of candidate.
+
+"total_pac_contribs": Total PAC receipts.
+
+"non_party_ind_exp_for": Non-party independent expenditures made in support of the candidate.
+
+"ind_exp_for": Total independent expenditures made to support the candidate.
+
+
+MEMBER COMMITTEE PLACEMENT CHARACTERISTICS:
+
+"com_1": First Committee placement of Member of Congress.
+
+"com_2": Second Committee placement of Member of Congress.
+
+"com_3": Third Committee placement of Member of Congress (rare so mostly NAs).
+
+"com_4": Fourth Committee placement of Member of Congress (rarer so almost entirely NAs).
+
+"com_power": How powerful were the committees the MC served in. Example provided is of the 109th Congress. Committees vary by congress, so points assigned vary by Congressional session. Documentation available upon request. 
+
+"num_com": Number of committees served on. 
+
+
+CONGRESSIONAL SESSION CHARACTERISTICS: 
+
+"cong_num": Congressional session number. Ranges from 109-113.
+
+"party_control": ‘D’ if Democrats controlled Congress, ‘R’ if Republicans controlled Congress.
+
+"dem_seats": Number of seats held by Democrats at the beginning of the Congressional session.
+
+"rep_seats": Number of seats held by Republicans at the beginning of the Congressional session.
+
+"other_seats": Number of seats held by third parties (independents, green party, etc.). Note that this dataset does not provide information about which third party MCs belonged to.
+
+
+
+DISTRICT CHARACTERISTICS: 
+
+"state": State name, two letter abbreviation (ie AK, CA).
+
+"cd": Congressional district number.
+
+"state_dist": State and district information. States are abbreviated, so Kansas’s first district is KS.1. For single district states, the district number is ‘0’, ie WY.0.
+
+"district_partisanship": Kernell’s (2009) measure of district partisanship for the current election cycle. (Interpolated using district presidential vote shares for 2010-2014.)
+
+"district_pres_vs": District-level percentage of the two-party vote share won by the Democratic presidential nominee in the most recent presidential election.
+
+"cook_lean_dem": Democratic presidential nominee's share of the two-party presidential vote in the past two presidential elections compared to the party's national average two-party share for those elections (by district).
+
+"region": Geographical region of Congressional district. Midwest, Northeast, South, West, and Territory. 
+
+"abroad_prcnt": Percent of the district that lived abroad in the census used for this term.
+
+"recent_arrival_prcnt": Percent of the district that recently moved into the district from another county
+or state.
+
+"total_pop_birth_place": Total population used for measuring mobility and/or nativity.
+
+"prcnt_foreign_born": Percent of the district that was born in a foreign country.
+
+"prcnt_ex_aliens": Percent of the foreign born population that became a citizen. This is intended to
+capture a measure of assimilation.
+
+"total_households": Total number of households in the district at the time of the most recent census.
+
+"mean_income": Mean income of a district’s households. No inflation adjustments used.
+
+"median_income": Median income of a district’s households. No inflation adjustments used.
+
+"total_employment_pop": Total population in a district used for the employment variables. Only includes those over the age of around 16, depending on the cutoff for that census.
+
+"prcnt_unemp": Percent of the district’s population that is unemployed but still in the labor force.
+
+"prcnt_not_employ": Percent of the district’s population that is not in the labor force. This excludes those who are unemployed but in the labor force.
+
+"prcnt_ba": Percent of the district with a bachelor’s degree or higher.
+
+"prcnt_hs": Percent of the district with a high school degree or higher.
+
+"total_pop_race_file": Total population for the race variables.
+
+"prcnt_asian": Percent of the district that is asian.
+
+"prcnt_black_not_hisp": Percept of the district that is black but not hispanic.
+
+"prcnt_hisp": Percent of the district that is hispanic, both black and white.
+
+"prcnt_multi": Percent of the district that is multi-racial.
+
+"prcnt_white": Percent of the district that is white but not hispanic.
+
+"prcnt_not_hisp": Percent of the district that is not hispanic.
+
+"prcnt_old": Percent of the district that is over 62 or 60, depending on the age buckets used by the census for that decade.
+
+"median_age": Median age in the district.
+
+"gini": Inequality index estimated from the percent of the population in each income bracket.
+
+"ses": Socioeconomic status measure: estimated from the income and education of a district. This was estimated by finding the weight of the common factor between education and income.
+
+"ses_norm": Socioeconomic status measure, normalized: estimated from the income and education of a district. It is normalized to range between 0 and 100. This allows the magnitude of this coefficient to be directly compared to the coefficients for income and education, both of which are given in percentages.
+
+
